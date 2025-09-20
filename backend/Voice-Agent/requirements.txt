@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+requests
+pydantic
+faster-whisper
+ffmpeg-python
+soundfile
+gTTS
