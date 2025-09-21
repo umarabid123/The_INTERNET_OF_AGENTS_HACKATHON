@@ -4,13 +4,13 @@
   "description": "AI-powered travel booking backend with crypto payments and instant booking",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "node api.js && node server.js",
+    "dev": "node api.js && nodemon server.js",
     "test": "jest",
     "build": "npm install",
     "setup": "node setup.js",
     "check-env": "node check-env.js",
-    "dev-debug": "npm run check-env && npm run dev"
+    "dev-debug": "node api.js && npm run check-env && npm run dev"
   },
   "keywords": [
     "ai",
