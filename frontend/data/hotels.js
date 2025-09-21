@@ -1,0 +1,80 @@
+export const hotels = [
+  {
+    id: 1,
+    name: "Grand Hyatt",
+    location: "New York, NY",
+    price: 350,
+    rating: 4.5,
+    reviews: 1250,
+    amenities: ["Wifi", "Pool", "Gym", "Restaurant", "Spa", "Parking"],
+    availability: 15,
+    activeViewers: 23,
+    description: "Experience luxury and comfort at Grand Hyatt. Located in the heart of New York, our hotel offers exceptional service and modern amenities with stunning city views.",
+    image: "/placeholder-hotel-1.jpg"
+  },
+  {
+    id: 2,
+    name: "The Plaza",
+    location: "New York, NY",
+    price: 950,
+    rating: 5.0,
+    reviews: 2890,
+    amenities: ["Wifi", "Restaurant", "Spa", "Concierge", "Parking"],
+    availability: 8,
+    activeViewers: 41,
+    description: "The iconic Plaza Hotel offers unparalleled luxury in the heart of Manhattan. Experience timeless elegance with world-class service and prime location.",
+    image: "/placeholder-hotel-2.jpg"
+  },
+  {
+    id: 3,
+    name: "The Ritz-Carlton",
+    location: "Los Angeles, CA",
+    price: 650,
+    rating: 4.8,
+    reviews: 1876,
+    amenities: ["Wifi", "Pool", "Gym", "Restaurant", "Spa"],
+    availability: 12,
+    activeViewers: 18,
+    description: "The Ritz-Carlton Los Angeles provides luxury accommodations with breathtaking views of the city and mountains, featuring world-class dining and amenities.",
+    image: "/placeholder-hotel-3.jpg"
+  },
+  {
+    id: 4,
+    name: "Four Seasons",
+    location: "Los Angeles, CA",
+    price: 850,
+    rating: 4.9,
+    reviews: 2156,
+    amenities: ["Wifi", "Pool", "Gym", "Restaurant", "Spa", "Parking"],
+    availability: 6,
+    activeViewers: 35,
+    description: "Four Seasons Los Angeles offers refined luxury with exceptional service, featuring elegant rooms, fine dining, and a relaxing spa experience.",
+    image: "/placeholder-hotel-4.jpg"
+  },
+  {
+    id: 5,
+    name: "Hilton Downtown",
+    location: "Chicago, IL",
+    price: 280,
+    rating: 4.2,
+    reviews: 945,
+    amenities: ["Wifi", "Gym", "Restaurant", "Parking"],
+    availability: 20,
+    activeViewers: 12,
+    description: "Modern comfort in downtown Chicago with easy access to business district and attractions. Perfect for both business and leisure travelers.",
+    image: "/placeholder-hotel-5.jpg"
+  },
+  {
+    id: 6,
+    name: "Ocean Resort",
+    location: "Miami, FL",
+    price: 420,
+    rating: 4.6,
+    reviews: 1534,
+    amenities: ["Wifi", "Pool", "Beach Access", "Restaurant", "Spa"],
+    availability: 18,
+    activeViewers: 27,
+    description: "Beachfront resort offering stunning ocean views, world-class amenities, and direct beach access in the heart of Miami Beach.",
+    image: "/placeholder-hotel-6.jpg"
+  }
+];
