@@ -1,0 +1,461 @@
+const express = require('express');
+const router = express.Router();
+const Payment = require('../models/Payment');
+const Booking = require('../models/Booking');
+const { v4: uuidv4 } = require('uuid');
+
+/**
+ * @route   POST /api/payment/create
+ * @desc    Create a new crypto payment
+ * @access  Public
+ */
+router.post('/create', async (req, res) => {
+  try {
+    const {
+      bookingId,
+      amount,
+      currency = 'USD',
+      cryptoCurrency = 'USDC',
+      customerEmail,
+      description,
+      returnUrl,
+      webhookUrl
+    } = req.body;
+
+    // Validate required fields
+    if (!bookingId || !amount || !customerEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'bookingId, amount, and customerEmail are required'
+      });
+    }
+
+    // Verify booking exists
+    const booking = await Booking.findOne({ bookingId });
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // Calculate crypto amount
+    const calculation = await cryptoPaymentService.calculateCryptoAmount(
+      amount,
+      cryptoCurrency,
+      currency
+    );
+
+    // Create payment with Crossmint
+    const paymentData = {
+      bookingId,
+      amount: calculation.total,
+      currency: cryptoCurrency,
+      customerEmail,
+      description: description || `Payment for booking ${bookingId}`,
+      returnUrl: returnUrl || `${process.env.FRONTEND_URL}/payment/success`,
+      webhookUrl: webhookUrl || `${process.env.API_URL}/api/payment/webhook`
+    };
+
+    const paymentResponse = await cryptoPaymentService.createPayment(paymentData);
+
+    if (!paymentResponse.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create payment'
+      });
+    }
+
+    // Save payment to database
+    const payment = new Payment({
+      paymentId: uuidv4(),
+      orderId: paymentResponse.orderId,
+      bookingId: bookingId,
+      userId: booking.userId,
+      amount: {
+        original: {
+          value: amount,
+          currency: currency
+        },
+        crypto: {
+          value: calculation.cryptoAmount,
+          currency: cryptoCurrency,
+          exchangeRate: calculation.rate
+        },
+        fees: {
+          service: calculation.fees.service,
+          network: calculation.fees.network
+        },
+        total: calculation.total
+      },
+      method: {
+        type: 'crypto',
+        provider: 'crossmint',
+        details: {
+          cryptocurrency: cryptoCurrency,
+          walletAddress: paymentResponse.paymentAddress,
+          network: cryptoCurrency === 'BTC' ? 'bitcoin' : 'ethereum'
+        }
+      },
+      status: 'pending',
+      providerResponse: {
+        externalId: paymentResponse.orderId,
+        paymentUrl: paymentResponse.paymentUrl,
+        qrCode: paymentResponse.qrCode,
+        instructions: paymentResponse.instructions
+      },
+      customer: {
+        email: customerEmail,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      },
+      expiresAt: paymentResponse.expiresAt || new Date(Date.now() + 15 * 60 * 1000)
+    });
+
+    await payment.save();
+
+    // Update booking payment info
+    booking.paymentInfo.paymentId = payment.paymentId;
+    booking.paymentInfo.method = 'crypto';
+    booking.paymentInfo.status = 'pending';
+    await booking.save();
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: payment.paymentId,
+        orderId: paymentResponse.orderId,
+        paymentUrl: paymentResponse.paymentUrl,
+        paymentAddress: paymentResponse.paymentAddress,
+        qrCode: paymentResponse.qrCode,
+        amount: {
+          fiat: {
+            value: amount,
+            currency: currency
+          },
+          crypto: {
+            value: calculation.cryptoAmount,
+            currency: cryptoCurrency
+          },
+          total: calculation.total,
+          fees: calculation.fees
+        },
+        expiresAt: payment.expiresAt,
+        instructions: paymentResponse.instructions
+      }
+    });
+
+  } catch (error) {
+    console.error('Payment creation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create payment',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route   GET /api/payment/verify/:orderId
+ * @desc    Verify payment status
+ * @access  Public
+ */
+router.get('/verify/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    // Find payment in database
+    const payment = await Payment.findOne({ orderId });
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment not found'
+      });
+    }
+
+    // Verify with payment provider
+    const verification = await cryptoPaymentService.verifyPayment(orderId);
+
+    if (verification.success && verification.status !== payment.status) {
+      // Update payment status
+      await payment.updateStatus(verification.status, verification);
+
+      // Update booking if payment completed
+      if (verification.status === 'paid') {
+        const booking = await Booking.findOne({ bookingId: payment.bookingId });
+        if (booking) {
+          booking.paymentInfo.status = 'paid';
+          booking.paymentInfo.paidAmount = verification.paidAmount;
+          booking.paymentInfo.paidCurrency = verification.paidCurrency;
+          booking.paymentInfo.transactionId = verification.transactionHash;
+          booking.paymentInfo.paymentDate = new Date();
+          booking.status = 'confirmed';
+          await booking.save();
+
+          // Emit real-time update
+          const io = req.app.get('io');
+          io.to(`payment-${payment.paymentId}`).emit('payment-completed', {
+            paymentId: payment.paymentId,
+            bookingId: payment.bookingId,
+            status: 'completed'
+          });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: payment.paymentId,
+        orderId: orderId,
+        status: payment.status,
+        verification: verification,
+        lastUpdated: payment.timeline.lastUpdated
+      }
+    });
+
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify payment',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route   POST /api/payment/webhook
+ * @desc    Handle payment webhooks from Crossmint
+ * @access  Public
+ */
+router.post('/webhook', async (req, res) => {
+  try {
+    const signature = req.get('X-Crossmint-Signature');
+    const webhookData = req.body;
+
+    // Process webhook
+    const result = await cryptoPaymentService.processWebhook(webhookData, signature);
+
+    if (result.success) {
+      // Find and update payment
+      const payment = await Payment.findOne({ 
+        'providerResponse.externalId': webhookData.data.id 
+      });
+
+      if (payment) {
+        await payment.updateStatus(webhookData.data.status, webhookData.data);
+
+        // Emit real-time update
+        const io = req.app.get('io');
+        io.to(`payment-${payment.paymentId}`).emit('payment-update', {
+          paymentId: payment.paymentId,
+          status: payment.status,
+          event: webhookData.event
+        });
+
+        // Update booking if necessary
+        if (result.action === 'payment_confirmed') {
+          const booking = await Booking.findOne({ bookingId: payment.bookingId });
+          if (booking) {
+            booking.status = 'confirmed';
+            booking.paymentInfo.status = 'paid';
+            await booking.save();
+
+            io.to(`booking-${booking.bookingId}`).emit('booking-confirmed', {
+              bookingId: booking.bookingId,
+              status: 'confirmed'
+            });
+          }
+        }
+      }
+    }
+
+    res.json({ received: true });
+
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(400).json({ error: 'Webhook processing failed' });
+  }
+});
+
+/**
+ * @route   GET /api/payment/rates
+ * @desc    Get current cryptocurrency exchange rates
+ * @access  Public
+ */
+router.get('/rates', async (req, res) => {
+  try {
+    const { baseCurrency = 'USD' } = req.query;
+
+    const rates = await cryptoPaymentService.getCryptoRates(baseCurrency);
+    const supportedCurrencies = cryptoPaymentService.getSupportedCurrencies();
+
+    res.json({
+      success: true,
+      data: {
+        rates: rates,
+        supportedCurrencies: supportedCurrencies,
+        baseCurrency: baseCurrency,
+        lastUpdated: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Rates fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch exchange rates',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route   POST /api/payment/calculate
+ * @desc    Calculate crypto amount for given fiat amount
+ * @access  Public
+ */
+router.post('/calculate', async (req, res) => {
+  try {
+    const {
+      amount,
+      fromCurrency = 'USD',
+      toCurrency
+    } = req.body;
+
+    if (!amount || !toCurrency) {
+      return res.status(400).json({
+        success: false,
+        message: 'amount and toCurrency are required'
+      });
+    }
+
+    const calculation = await cryptoPaymentService.calculateCryptoAmount(
+      amount,
+      toCurrency,
+      fromCurrency
+    );
+
+    res.json({
+      success: true,
+      data: calculation
+    });
+
+  } catch (error) {
+    console.error('Calculation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate crypto amount',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route   GET /api/payment/history/:userId
+ * @desc    Get payment history for user
+ * @access  Private (add auth middleware in production)
+ */
+router.get('/history/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { page = 1, limit = 10, status } = req.query;
+
+    const query = { userId };
+    if (status) {
+      query.status = status;
+    }
+
+    const payments = await Payment.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .populate('userId', 'email firstName lastName');
+
+    const total = await Payment.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        payments: payments,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Payment history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment history',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route   POST /api/payment/refund
+ * @desc    Process payment refund
+ * @access  Private (add auth middleware in production)
+ */
+router.post('/refund', async (req, res) => {
+  try {
+    const {
+      paymentId,
+      amount,
+      reason = 'Customer request'
+    } = req.body;
+
+    if (!paymentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'paymentId is required'
+      });
+    }
+
+    const payment = await Payment.findOne({ paymentId });
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment not found'
+      });
+    }
+
+    if (!payment.canBeRefunded()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment cannot be refunded'
+      });
+    }
+
+    const refundAmount = amount || payment.amount.total;
+
+    // Process refund
+    await payment.processRefund(refundAmount, reason);
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: paymentId,
+        refundAmount: refundAmount,
+        status: 'refund_pending',
+        message: 'Refund initiated successfully'
+      }
+    });
+
+  } catch (error) {
+    console.error('Refund processing error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process refund',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+module.exports = router;
