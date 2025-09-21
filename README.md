@@ -111,3 +111,26 @@ Our **AI-Powered Travel Agent** solves these issues by:
    git clone https://github.com/<your-repo>/ai-travel-agent.git
    cd ai-travel-agent
 
+
+---
+
+## 🌐 Live Demo  
+👉 [Click here to try the demo](https://the-internet-of-agents-hackathon.vercel.app/)  
+
+---
+## 🏆 Hackathon Details  
+- **Event**: The Internet of Agents Hackathon @ Solana Skyline  
+- **Date**: September 14–21, 2025  
+- **Theme**: Build agentic applications using **Coral Protocol**  
+
+---
+
+## 🔮 Future Improvements  
+- 🎙️ Voice-enabled AI travel assistant (fully conversational bookings).  
+- 🌍 Multi-language support for global travelers.  
+- 💸 Smarter budget optimizations with AI-driven filtering.  
+- 💳 Integration with multiple payment gateways for instant booking.  
+- ✈️ Real-time airline & hotel API integration.  
+- 🛂 NFT-based travel tickets with Solana.  
+
+
